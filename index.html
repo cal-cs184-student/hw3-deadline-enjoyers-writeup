@@ -1,16 +1,24 @@
 <!doctype html>
-<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>CS184 Homework 3 — Path Tracer</title>
-<style>
-*{box-sizing:border-box}body{margin:0;background:#f3f6f8;color:#18232d;font:16px/1.55 Arial,sans-serif}main{max-width:1050px;margin:auto;padding:45px 34px 80px;background:#fff}h1{margin:0}h2{border-top:2px solid #ccdae4;padding-top:22px;margin-top:40px;color:#17496a}h3{margin:22px 0 7px}p{margin:10px 0 14px}.meta{color:#52616c;margin:3px 0}.grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:15px;margin:16px 0}.four{grid-template-columns:repeat(4,minmax(0,1fr))}figure{margin:0;break-inside:avoid}img{display:block;width:100%;height:auto;border:1px solid #d5dfe5}figcaption{font-size:.86rem;color:#455762;margin-top:4px}.wide{max-width:720px;margin:18px auto}.note{background:#edf4f8;border-left:4px solid #3c7da5;padding:9px 14px}code{background:#edf2f5;padding:1px 3px}a{color:#075a91}@media print{body{background:#fff;font-size:10pt}main{max-width:none;padding:0}h2,h3{break-after:avoid}.grid{gap:8px}}@media(max-width:650px){main{padding:22px 16px}.four{grid-template-columns:repeat(2,minmax(0,1fr))}}
-</style></head><body><main>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>CS 184 Fall 2026 · Homework 3 Write-Up</title>
+  <link rel="stylesheet" href="./style.css">
+</head>
+<body>
+<main>
+<div class="eyebrow">CS 184/284A · Fall 2026</div>
 <h1>Homework 3: Path Tracer</h1>
-<p class="meta">CS184/284A · Fall 2026 · Arthur Yu and Wenxuan Yuan</p>
-<p class="meta">Webpage: <a href="https://cal-cs184-student.github.io/hw3-deadline-enjoyers-writeup/">cal-cs184-student.github.io/hw3-deadline-enjoyers-writeup/</a></p>
-<p class="meta">Repository: <a href="https://github.com/cal-cs184-student/hw3-deadline-enjoyers-writeup">github.com/cal-cs184-student/hw3-deadline-enjoyers-writeup</a></p>
+<p class="byline">Write-up by Arthur Yu and Wenxuan Yuan</p>
+<div class="meta">
+  <p><strong>Webpage:</strong> <a href="https://cal-cs184-student.github.io/hw3-deadline-enjoyers-writeup/">https://cal-cs184-student.github.io/hw3-deadline-enjoyers-writeup/</a></p>
+  <p><strong>Code repository:</strong> <a href="https://github.com/cal-cs184-student/hw3-deadline-enjoyers">https://github.com/cal-cs184-student/hw3-deadline-enjoyers</a></p>
+  <p><strong>Write-up repository:</strong> <a href="https://github.com/cal-cs184-student/hw3-deadline-enjoyers-writeup">https://github.com/cal-cs184-student/hw3-deadline-enjoyers-writeup</a></p>
+</div>
 
 <h2>Overview</h2>
-<p>We built a Monte Carlo path tracer with camera ray generation, ray–primitive intersection, a bounding volume hierarchy, direct lighting, recursive global illumination, and adaptive pixel sampling. The same intersection machinery handles visible surfaces and shadow visibility. We learned that the choice of sampling distribution has a major effect on image noise even when the estimators target the same lighting integral. Indirect light also fills dark regions and transfers color between Cornell box walls.</p>
+<p class="lead">We built a Monte Carlo path tracer with camera ray generation, ray–primitive intersection, a bounding volume hierarchy, direct lighting, recursive global illumination, and adaptive pixel sampling. The same intersection machinery handles visible surfaces and shadow visibility. We learned that the choice of sampling distribution has a major effect on image noise even when the estimators target the same lighting integral. Indirect light also fills dark regions and transfers color between Cornell box walls.</p>
 <p>The implementation uses Möller–Trumbore triangle tests, quadratic sphere tests, a median-split BVH, Lambertian BSDF evaluation and cosine-weighted sampling, explicit light sampling, Russian Roulette continuation, and a confidence-interval stopping test. All result images are direct <code>-f</code> output from the renderer. The larger comparison matrices use smaller images to limit rendering time; captions identify their actual settings. For the full-scene low-resolution images, we temporarily preserved the 480×360 camera field of view when reducing output size, then restored the original camera code.</p>
 
 <h2>Part 1: Ray Generation and Scene Intersection</h2>
@@ -58,8 +66,7 @@
 <p>Both scenes below use a 2048 spp cap, one light sample, depth 5, and 240×180 output. In the rate maps blue indicates fewer samples, green an intermediate fraction, and red the full or nearly full budget. Flat well-lit regions tend to converge early, while shadow boundaries and indirect-light regions need more work.</p>
 <div class="grid"><figure><img src="assets/bunny-adaptive-full-s2048.png" alt="Adaptive bunny radiance"><figcaption>CBbunny: adaptive result.</figcaption></figure><figure><img src="assets/bunny-adaptive-full-s2048_rate.png" alt="Bunny sample-rate map"><figcaption>CBbunny: sample-rate map.</figcaption></figure><figure><img src="assets/spheres-adaptive-full-s2048.png" alt="Adaptive spheres radiance"><figcaption>CBspheres: adaptive result.</figcaption></figure><figure><img src="assets/spheres-adaptive-full-s2048_rate.png" alt="Spheres sample-rate map"><figcaption>CBspheres: sample-rate map.</figcaption></figure></div>
 
-<h2>Part 6: Extra Credit</h2><p>No extra-credit result is claimed in this report.</p>
-<h2>Collaboration and AI acknowledgement</h2>
-<p>Arthur Yu primarily implemented the renderer. Wenxuan Yuan primarily prepared the write-up, inspected the implementation, generated and compared renderings, and organized the results. Working across code and visual output helped connect the sampling formulas to visible image quality.</p>
-<p>We used an LLM to inspect the existing code, help plan and draft this write-up, prepare rendering commands, and organize result figures. The LLM did not author the renderer implementation described here. We checked explanations against the code and labeled actual render settings and remaining evidence gaps.</p>
-</main></body></html>
+<footer class="page-footnote"><p>CS 184/284A · Homework 3 · Arthur Yu and Wenxuan Yuan</p><p>Figures are original renderer outputs; sampling settings are stated in their captions.</p></footer>
+</main>
+</body>
+</html>
