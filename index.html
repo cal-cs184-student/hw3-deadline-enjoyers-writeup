@@ -1,106 +1,65 @@
-<html>
-	<head>
-		<script src='https://cdnjs.cloudflare.com/ajax/libs/mathjax/2.7.4/MathJax.js?config=default'></script>
-		<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600&display=swap" rel="stylesheet">
-		<style>
-			h1 {
-				text-align: center;
-			}
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>CS184 Homework 3 — Path Tracer</title>
+<style>
+*{box-sizing:border-box}body{margin:0;background:#f3f6f8;color:#18232d;font:16px/1.55 Arial,sans-serif}main{max-width:1050px;margin:auto;padding:45px 34px 80px;background:#fff}h1{margin:0}h2{border-top:2px solid #ccdae4;padding-top:22px;margin-top:40px;color:#17496a}h3{margin:22px 0 7px}p{margin:10px 0 14px}.meta{color:#52616c;margin:3px 0}.grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:15px;margin:16px 0}.four{grid-template-columns:repeat(4,minmax(0,1fr))}figure{margin:0;break-inside:avoid}img{display:block;width:100%;height:auto;border:1px solid #d5dfe5}figcaption{font-size:.86rem;color:#455762;margin-top:4px}.wide{max-width:720px;margin:18px auto}.note{background:#edf4f8;border-left:4px solid #3c7da5;padding:9px 14px}code{background:#edf2f5;padding:1px 3px}a{color:#075a91}@media print{body{background:#fff;font-size:10pt}main{max-width:none;padding:0}h2,h3{break-after:avoid}.grid{gap:8px}}@media(max-width:650px){main{padding:22px 16px}.four{grid-template-columns:repeat(2,minmax(0,1fr))}}
+</style></head><body><main>
+<h1>Homework 3: Path Tracer</h1>
+<p class="meta">CS184/284A · Fall 2026 · Arthur Yu and Wenxuan Yuan</p>
+<p class="meta">Webpage: <a href="https://cal-cs184-student.github.io/hw3-deadline-enjoyers-writeup/">cal-cs184-student.github.io/hw3-deadline-enjoyers-writeup/</a></p>
+<p class="meta">Repository: <a href="https://github.com/cal-cs184-student/hw3-deadline-enjoyers-writeup">github.com/cal-cs184-student/hw3-deadline-enjoyers-writeup</a></p>
 
-			.container {
-				margin: 0 auto;
-				padding: 60px 20%;
-			}
+<h2>Overview</h2>
+<p>We built a Monte Carlo path tracer with camera ray generation, ray–primitive intersection, a bounding volume hierarchy, direct lighting, recursive global illumination, and adaptive pixel sampling. The same intersection machinery handles visible surfaces and shadow visibility. We learned that the choice of sampling distribution has a major effect on image noise even when the estimators target the same lighting integral. Indirect light also fills dark regions and transfers color between Cornell box walls.</p>
+<p>The implementation uses Möller–Trumbore triangle tests, quadratic sphere tests, a median-split BVH, Lambertian BSDF evaluation and cosine-weighted sampling, explicit light sampling, Russian Roulette continuation, and a confidence-interval stopping test. All result images are direct <code>-f</code> output from the renderer. The larger comparison matrices use smaller images to limit rendering time; captions identify their actual settings. For the full-scene low-resolution images, we temporarily preserved the 480×360 camera field of view when reducing output size, then restored the original camera code.</p>
 
-			figure {
-				text-align: center;
-			}
+<h2>Part 1: Ray Generation and Scene Intersection</h2>
+<p>For each pixel we jitter a camera sample within its square, then divide by image width and height to get normalized coordinates. The camera maps a sample to the canonical plane at <code>z = -1</code> with <code>x = (2u−1)tan(hFov/2)</code> and <code>y = (2v−1)tan(vFov/2)</code>. It transforms and normalizes this direction in world space, sets near/far clipping, traces the ray, and averages the resulting radiance over the pixel's samples.</p>
+<p>For triangle intersection, we form two edges and use the Möller–Trumbore cross/dot products to solve for barycentric coordinates <code>u</code> and <code>v</code> and distance <code>t</code>. We reject negative coordinates, <code>u+v &gt; 1</code>, and distances outside the ray interval. A hit lowers <code>ray.max_t</code> so later tests retain the nearest surface. We barycentrically interpolate vertex normals and normalize the result. A sphere is intersected by solving the ray–sphere quadratic and choosing the nearest root in range.</p>
+<div class="grid"><figure><img src="assets/normal-CBempty.png" alt="Normal-shaded empty Cornell box"><figcaption>CBempty.dae; normal shading, 480×360, 1 spp.</figcaption></figure><figure><img src="assets/normal-CBspheres.png" alt="Normal-shaded spheres"><figcaption>CBspheres.dae; normal shading, 480×360, 1 spp.</figcaption></figure><figure><img src="assets/normal-CBbunny.png" alt="Normal-shaded bunny"><figcaption>CBbunny.dae; normal shading, 480×360, 1 spp.</figcaption></figure></div>
+<p>For these diagnostic images we temporarily returned <code>0.5n + 0.5</code> after the first surface hit, where <code>n</code> is the interpolated normal. We restored the original integrator afterward. Color changes across the curved objects show that the barycentric normals and closest-hit records are working.</p>
 
-			img {
-				display: inline-block;
-			}
+<h2>Part 2: Bounding Volume Hierarchy</h2>
+<p>We union the primitives' bounding boxes to form each node. If the primitive count fits the maximum leaf size, the node stores that range. Otherwise, we choose the axis of greatest box extent, partition primitive centroids at their median with <code>std::nth_element</code>, and recurse. This heuristic balances primitive counts without a full sort at each node; it is not a surface-area heuristic.</p>
+<p>Ray–box intersection clips the valid <code>t</code> interval against three slabs, swaps the slab endpoints for negative ray directions, and handles parallel rays separately. Traversal prunes missed boxes. The Boolean shadow query short-circuits on a hit, while the full intersection query continues to find the nearest primitive by tightening <code>ray.max_t</code>.</p>
+<div class="grid"><figure><img src="assets/normal-CBdragon.png" alt="Normal-shaded dragon"><figcaption>CBdragon.dae; normal shading, 480×360, 1 spp, BVH enabled.</figcaption></figure><figure><img src="assets/normal-CBbunny.png" alt="Normal-shaded bunny with BVH"><figcaption>CBbunny.dae with the same settings and BVH enabled.</figcaption></figure></div>
+<p>For a controlled timing comparison, we temporarily built a single-leaf version: it retains the root box but linearly tests all primitives on a ray that enters it. We rendered the same scenes at 240×180, 1 spp, 1 light sample, depth 1, and 8 threads. The times below are the renderer's own tracing time, excluding scene loading and BVH construction; then we restored the normal BVH build.</p>
+<table><thead><tr><th>Scene</th><th>BVH</th><th>Single leaf</th><th>Speedup</th></tr></thead><tbody><tr><td>CBbunny</td><td>0.34 s</td><td>39.43 s</td><td>116×</td></tr><tr><td>CBdragon</td><td>0.33 s</td><td>175.44 s</td><td>532×</td></tr></tbody></table>
+<p>Both versions produce the same visible scene, but the hierarchy rejects most primitives before an expensive triangle test. The larger dragon geometry benefits even more because the linear scan grows with primitive count. The comparison includes one root-box rejection in the single-leaf case, so it slightly favors that baseline over a fully unaccelerated scan.</p>
 
-			body {
-				font-family: 'Inter', sans-serif;
-			}
-		</style>
-	</head>
-	<body>
-		<div class="container">
-		<h1>CS184/284A Fall 2026 Homework 3 Write-Up</h1>
-		<div style="text-align: center;">Names: </div>
+<h2>Part 3: Direct Illumination</h2>
+<p>Uniform-hemisphere sampling chooses directions above the surface with density <code>1/(2π)</code>, traces each one, and adds the first hit's emitted radiance weighted by the Lambertian BSDF, cosine, and inverse density. Light sampling instead samples each light directly, traces a shadow ray to just before it, and adds <code>f·L·cosθ/pdf</code> if unoccluded. Delta lights receive one sample; area lights receive <code>-l</code> samples. Shadow rays begin at <code>EPS_F</code> to avoid self-intersection.</p>
+<div class="grid"><figure><img src="assets/bunny-hemisphere-l64.png" alt="Hemisphere direct lighting"><figcaption>Uniform hemisphere, CBbunny, <code>-s 1 -l 64 -m 1 -H</code>.</figcaption></figure><figure><img src="assets/bunny-direct-l64.png" alt="Light sampled direct lighting"><figcaption>Light sampling, same scene and settings without <code>-H</code>.</figcaption></figure></div>
+<div class="grid four"><figure><img src="assets/bunny-direct-l1.png" alt="1 light ray"><figcaption>1 light ray</figcaption></figure><figure><img src="assets/bunny-direct-l4.png" alt="4 light rays"><figcaption>4 light rays</figcaption></figure><figure><img src="assets/bunny-direct-l16.png" alt="16 light rays"><figcaption>16 light rays</figcaption></figure><figure><img src="assets/bunny-direct-l64.png" alt="64 light rays"><figcaption>64 light rays</figcaption></figure></div>
+<p>All four shadow images use one camera sample per pixel. With more area-light samples the soft-shadow boundary becomes smoother and isolated bright/dark spots diminish. At the same nominal sample count, light sampling generally has much lower variance because it directs rays toward the small emitter. Uniform hemisphere samples often miss the emitter, leaving sparse bright hits and noisy dark surfaces.</p>
 
-		<br>
+<h2>Part 4: Global Illumination</h2>
+<p>At each hit, zero-bounce radiance is the surface's own emission. The recursive routine evaluates direct lighting, samples a direction from the BSDF, traces the next ray, and weights returned radiance by <code>f·cosθ/pdf</code>. After the first indirect step, each path continues with probability 0.65 and divides by that probability when it continues. The first indirect step is forced. Maximum ray depth bounds recursion; <code>-o</code> switches between accumulated and isolated bounce output.</p>
+<figure class="wide"><img src="assets/bunny-global-full-true1024.png" alt="Global illumination bunny"><figcaption>CBbunny; direct and indirect illumination, 160×120, <code>-s 1024 -l 4 -m 5 -a 0 0</code>, exactly 1024 spp.</figcaption></figure>
+<h3>Isolated and accumulated bounces</h3>
+<p>The following images use CBbunny, 160×120, exactly 1024 spp with adaptive stopping disabled (<code>-a 0 0</code>), and one light sample. Bounce 0 shows source emission; bounce 1 is directly lit surfaces. Bounce 2 brings light into areas missed by direct illumination, and bounce 3 adds weaker color transfer and fills darker regions. These multi-surface paths are absent from a basic rasterization pass. Accumulated images become more complete as higher-order contributions are added.</p>
+<div class="grid four">
+<figure><img src="assets/exact160-bounce0.png" alt="Isolated bounce 0"><figcaption>Isolated, depth 0</figcaption></figure><figure><img src="assets/exact160-bounce1.png" alt="Isolated bounce 1"><figcaption>Isolated, depth 1</figcaption></figure><figure><img src="assets/exact160-bounce2.png" alt="Isolated bounce 2"><figcaption>Isolated, depth 2</figcaption></figure><figure><img src="assets/exact160-bounce3.png" alt="Isolated bounce 3"><figcaption>Isolated, depth 3</figcaption></figure><figure><img src="assets/exact160-bounce4.png" alt="Isolated bounce 4"><figcaption>Isolated, depth 4</figcaption></figure><figure><img src="assets/exact160-bounce5.png" alt="Isolated bounce 5"><figcaption>Isolated, depth 5</figcaption></figure>
+</div>
+<div class="grid four">
+<figure><img src="assets/exact160-accum0.png" alt="Accumulated depth 0"><figcaption>Accumulated, depth 0</figcaption></figure><figure><img src="assets/exact160-accum1.png" alt="Accumulated depth 1"><figcaption>Accumulated, depth 1</figcaption></figure><figure><img src="assets/exact160-accum2.png" alt="Accumulated depth 2"><figcaption>Accumulated, depth 2</figcaption></figure><figure><img src="assets/exact160-accum3.png" alt="Accumulated depth 3"><figcaption>Accumulated, depth 3</figcaption></figure><figure><img src="assets/exact160-accum4.png" alt="Accumulated depth 4"><figcaption>Accumulated, depth 4</figcaption></figure><figure><img src="assets/exact160-accum5.png" alt="Accumulated depth 5"><figcaption>Accumulated, depth 5</figcaption></figure>
+</div>
+<h3>Russian Roulette and pixel sample counts</h3>
+<p>The accumulated depth 0–4 images above and depth 100 below compare Russian Roulette renders at exactly 1024 spp. Depth 100 remains finite because most long paths terminate probabilistically; allowing longer paths retains small higher-order contributions.</p>
+<figure class="wide"><img src="assets/exact160-rr100.png" alt="Depth 100 Russian Roulette"><figcaption>CBbunny; accumulated, 160×120, <code>-s 1024 -l 1 -m 100 -a 0 0</code>.</figcaption></figure>
+<div class="grid four"><figure><img src="assets/exact-s1.png" alt="1 spp"><figcaption>1 spp</figcaption></figure><figure><img src="assets/exact-s2.png" alt="2 spp"><figcaption>2 spp</figcaption></figure><figure><img src="assets/exact-s4.png" alt="4 spp"><figcaption>4 spp</figcaption></figure><figure><img src="assets/exact-s8.png" alt="8 spp"><figcaption>8 spp</figcaption></figure><figure><img src="assets/exact-s16.png" alt="16 spp"><figcaption>16 spp</figcaption></figure><figure><img src="assets/exact-s64.png" alt="64 spp"><figcaption>64 spp</figcaption></figure><figure><img src="assets/bunny-global-full-true1024.png" alt="1024 spp"><figcaption>1024 spp</figcaption></figure></div>
+<p>These seven images use 160×120 output, four light samples, depth 5, and adaptive stopping disabled so each pixel gets the stated sample count. Increasing samples reduces Monte Carlo grain and stabilizes indirect color and shadows. Gains are largest at low sample counts and then diminish, consistent with square-root Monte Carlo convergence.</p>
+<p>To compare direct and indirect illumination, we rendered a temporary diagnostic variant that subtracts the primary hit's direct term from the full path estimate. This retains higher-order reflected light; source emission remains visible. We restored the original integrator afterward.</p>
+<div class="grid"><figure><img src="assets/bunny-direct-true1024.png" alt="Direct illumination only"><figcaption>Direct only; CBbunny close-up, 160×120, exactly 1024 spp, 4 light samples, depth 1.</figcaption></figure><figure><img src="assets/bunny-indirect-true1024.png" alt="Indirect illumination only"><figcaption>Indirect only; same framing and sampling, depth 5, primary direct term removed.</figcaption></figure></div>
+<p>Direct illumination defines the strongly lit bunny, floor, and visibility structure. Indirect illumination is weaker and softer, especially on surfaces receiving bounced light from the colored walls. Together they produce the more complete image above.</p>
 
-		Link to webpage: (TODO) <a href="https://cs184.eecs.berkeley.edu/fa26">cs184.eecs.berkeley.edu/fa26</a>
-		Link to GitHub repository: (TODO) <a href="https://cs184.eecs.berkeley.edu/fa26">cs184.eecs.berkeley.edu/fa26</a>
-		
-		<figure>
-			<img src="assets/cornell.png" alt="Cornell Boxes with Bunnies" style="width:70%"/>
-			<figcaption>You can add images with captions!</figcaption>
-		</figure>
+<h2>Part 5: Adaptive Sampling</h2>
+<p>Per pixel, we track the sum and squared sum of luminance. Every 32 samples we estimate the mean and sample variance and compute a 95% confidence-interval half-width <code>1.96·sqrt(variance/n)</code>. We stop when it is at most <code>0.05·mean</code> or the maximum sample count is reached. The final radiance is divided by the actual count, which is also stored for the sample-rate image.</p>
+<p>Both scenes below use a 2048 spp cap, one light sample, depth 5, and 240×180 output. In the rate maps blue indicates fewer samples, green an intermediate fraction, and red the full or nearly full budget. Flat well-lit regions tend to converge early, while shadow boundaries and indirect-light regions need more work.</p>
+<div class="grid"><figure><img src="assets/bunny-adaptive-full-s2048.png" alt="Adaptive bunny radiance"><figcaption>CBbunny: adaptive result.</figcaption></figure><figure><img src="assets/bunny-adaptive-full-s2048_rate.png" alt="Bunny sample-rate map"><figcaption>CBbunny: sample-rate map.</figcaption></figure><figure><img src="assets/spheres-adaptive-full-s2048.png" alt="Adaptive spheres radiance"><figcaption>CBspheres: adaptive result.</figcaption></figure><figure><img src="assets/spheres-adaptive-full-s2048_rate.png" alt="Spheres sample-rate map"><figcaption>CBspheres: sample-rate map.</figcaption></figure></div>
 
-		<!--
-		We've already added one heading per part, to make your write-up as navigable when grading. Please fit your write-up within these sections!
-		-->
-
-		<h2>Overview</h2>
-		Give a high-level overview of what you implemented in this homework. Think about what you've built as a whole. Share your thoughts on what interesting things you've learned from completing the homework.
-
-		<h2>Part 1: Ray Generation and Scene Intersection</h2>
-		Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat. Duis aute irure dolor in reprehenderit in voluptate velit esse cillum dolore eu fugiat nulla pariatur. Excepteur sint occaecat cupidatat non proident, sunt in culpa qui officia deserunt mollit anim id est laborum.
-
-		<p>Here is an example 2x2 gridlike structure using an HTML table. Each <b>tr</b> is a row and each <b>td</b> is a column in that row. You might find this useful for framing and showing your result images in an organized fashion.</p>
-		<div style="display: flex; flex-direction: column; align-items: center;">
-			<table style="width: 100%; text-align: center; border-collapse: collapse;">
-			  <tr>
-				<td style="text-align: center;">
-				  <img src="assets/cornell.png" width="400px"/>
-				  <figcaption>Caption goes here.</figcaption>
-				</td>
-				<td style="text-align: center;">
-				  <img src="assets/cornell.png" width="400px"/>
-				  <figcaption>Caption goes here.</figcaption>
-				</td>
-			  </tr>
-			  <tr>
-				<td style="text-align: center;">
-				  <img src="assets/cornell.png" width="400px"/>
-				  <figcaption>Caption goes here.</figcaption>
-				</td>
-				<td style="text-align: center;">
-				  <img src="assets/cornell.png" width="400px"/>
-				  <figcaption>Caption goes here.</figcaption>
-				</td>
-			  </tr>
-			</table>
-		</div>
-		
-		<h2>Part 2: Bounding Volume Hierarchy</h2>
-		Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat. Duis aute irure dolor in reprehenderit in voluptate velit esse cillum dolore eu fugiat nulla pariatur. Excepteur sint occaecat cupidatat non proident, sunt in culpa qui officia deserunt mollit anim id est laborum.
-
-		<h2>Part 3: Direct Illumination</h2>
-		Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat. Duis aute irure dolor in reprehenderit in voluptate velit esse cillum dolore eu fugiat nulla pariatur. Excepteur sint occaecat cupidatat non proident, sunt in culpa qui officia deserunt mollit anim id est laborum.
-
-		<h2>Part 4: Global Illumination</h2>
-		Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat. Duis aute irure dolor in reprehenderit in voluptate velit esse cillum dolore eu fugiat nulla pariatur. Excepteur sint occaecat cupidatat non proident, sunt in culpa qui officia deserunt mollit anim id est laborum.
-
-		<h2>Part 5: Adaptive Sampling</h2>
-		Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat. Duis aute irure dolor in reprehenderit in voluptate velit esse cillum dolore eu fugiat nulla pariatur. Excepteur sint occaecat cupidatat non proident, sunt in culpa qui officia deserunt mollit anim id est laborum.
-
-		<h2>(Optional) Part 6: Extra Credit Opportunities</h2>
-		Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat. Duis aute irure dolor in reprehenderit in voluptate velit esse cillum dolore eu fugiat nulla pariatur. Excepteur sint occaecat cupidatat non proident, sunt in culpa qui officia deserunt mollit anim id est laborum.
-		
-		<h2>Additional Notes (please remove)</h2>
-		<ul>
-			<li>You can also add code if you'd like as so: <code>code code code</code></li>
-			<li>If you'd like to add math equations, 
-				<ul>
-					<li>You can write inline equations like so: \( a^2 + b^2 = c^2 \)</li>
-					<li>You can write display equations like so: \[ a^2 + b^2 = c^2 \]</li>
-				</ul>
-			</li>
-		</ul>
-		</div>
-	</body>
-</html>
+<h2>Part 6: Extra Credit</h2><p>No extra-credit result is claimed in this report.</p>
+<h2>Collaboration and AI acknowledgement</h2>
+<p>Arthur Yu primarily implemented the renderer. Wenxuan Yuan primarily prepared the write-up, inspected the implementation, generated and compared renderings, and organized the results. Working across code and visual output helped connect the sampling formulas to visible image quality.</p>
+<p>We used an LLM to inspect the existing code, help plan and draft this write-up, prepare rendering commands, and organize result figures. The LLM did not author the renderer implementation described here. We checked explanations against the code and labeled actual render settings and remaining evidence gaps.</p>
+</main></body></html>

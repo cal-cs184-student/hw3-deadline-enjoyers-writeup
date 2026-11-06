@@ -1,0 +1,5 @@
+"scene","mode","render_seconds","wall_seconds","exit"
+"CBbunny","BVH","0.336","0.751","0"
+"CBbunny","single-leaf","39.4308","39.785","0"
+"CBdragon","BVH","0.3324","1.561","0"
+"CBdragon","single-leaf","175.4411","176.533","0"
